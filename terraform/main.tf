@@ -107,7 +107,7 @@ module "runners" {
   }
 
   pool_config = [{
-    size                         = 1
+    size                         = 2
     schedule_expression          = "cron(* * * * ? *)" # every minute
     schedule_expression_timezone = "Europe/London"
   }]
@@ -115,7 +115,7 @@ module "runners" {
   idle_config = [{
     cron      = "* * 9-19 * * 1-5" # 9AM to 7PM keep 2 runners idle to pick up jobs
     timeZone  = "Europe/London"
-    idleCount = 1
+    idleCount = 2
     # Defaults to 'oldest_first'
     evictionStrategy = "oldest_first"
   }]
