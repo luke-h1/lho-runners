@@ -1,0 +1,52 @@
+name: Validate
+description: Validate Terraform configuration
+inputs:
+  environment:
+    description: "The environment to validate against"
+    required: true
+    default: "test"
+  aws-key-id:
+    description: "The AWS key to use"
+    required: true
+  aws-secret-access-key:
+    description: "AWS secret access key to use"
+    required: true
+  terraform-version:
+    description: "Terraform version to use"
+    required: false
+    default: "1.9.8"
+  working-directory:
+    description: "Working directory for Terraform commands"
+    required: false
+    default: "terraform"
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ inputs.aws-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: eu-west-2
+        mask-aws-account-id: true
+
+    - name: Terraform init
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        terraform init -backend-config="key=vpc/${{ inputs.environment }}.tfstate" -backend-config="bucket=lho-gh-runners-${{ inputs.environment }}-terraform-state" -input=false
+
+    - name: Terraform fmt -check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform fmt -check
+
+    - name: Terraform validate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: terraform validate

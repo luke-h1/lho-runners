@@ -1,0 +1,77 @@
+name: Build AMI
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Environment to build for"
+        required: true
+        default: "test"
+        type: choice
+        options:
+          - test
+      runner-version:
+        description: "GitHub Actions runner version (without v prefix, leave empty for latest)"
+        required: false
+        type: string
+concurrency:
+  group: build-ami-${{ github.event.inputs.env  }}
+  cancel-in-progress: false
+env:
+  TF_VAR_env: ${{ github.event.inputs.env || 'test' }}
+  TF_VAR_github_app_private_key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+  TF_VAR_github_app_id: ${{ secrets.GH_APP_ID }}
+  TF_VAR_github_app_webhook_secret: ${{ secrets.GH_APP_WEBHOOK_SECRET }}
+
+jobs:
+  build-ami:
+    name: Build AMI for ${{ github.event.inputs.env }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate
+        uses: ./.github/actions/validate
+        with:
+          environment: ${{ github.event.inputs.env || 'test' }}
+          aws-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build AMI
+        id: build
+        uses: ./.github/actions/build-ami
+        with:
+          environment: ${{ github.event.inputs.env || 'test' }}
+          aws-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          runner-version: ${{ github.event.inputs.runner-version }}
+
+      - name: Create Release Summary
+        if: success()
+        run: |
+          echo "## AMI Build Successful :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.env || 'test' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Workflow:** ${{ github.workflow }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "terraform/images/manifest.json" ]; then
+            echo "### AMI Details" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            cat terraform/images/manifest.json | jq '.' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "## AMI Build Failed :x:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ github.event.inputs.env || 'test' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Check the logs above for details.**" >> $GITHUB_STEP_SUMMARY

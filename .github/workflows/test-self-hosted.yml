@@ -1,0 +1,20 @@
+name: Test Self-Hosted Runners
+on:
+  workflow_dispatch:
+
+jobs:
+  test-runner:
+    name: Test Self-Hosted Runner
+    runs-on: [self-hosted]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display runner details
+        run: |
+          echo "=== Self-Hosted Runner Details ==="
+          echo "OS: $(uname -a)"
+          echo "Memory: $(free -h)"
+          echo "Disk: $(df -h)"
+          echo "User: $(whoami)"
+          echo "Working directory: $(pwd)"

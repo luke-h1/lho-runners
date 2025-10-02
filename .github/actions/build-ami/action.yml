@@ -1,0 +1,136 @@
+name: Build AMI
+description: Build GitHub Runner AMI using Packer with VPC configuration from Terraform
+inputs:
+  environment:
+    description: "The environment to build for"
+    required: true
+    default: "test"
+  aws-key-id:
+    description: "The AWS key to use"
+    required: true
+  aws-secret-access-key:
+    description: "AWS secret access key to use"
+    required: true
+  terraform-version:
+    description: "Terraform version to use"
+    required: false
+    default: "1.9.8"
+  packer-version:
+    description: "Packer version to use"
+    required: false
+    default: "1.11.2"
+  runner-version:
+    description: "GitHub Actions runner version (without v prefix)"
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    - name: Setup Packer
+      uses: hashicorp/setup-packer@main
+      with:
+        version: ${{ inputs.packer-version }}
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ inputs.aws-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: eu-west-2
+        mask-aws-account-id: true
+
+    - name: Install jq
+      shell: bash
+      run: |
+        if ! command -v jq &> /dev/null; then
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+
+    - name: Terraform init
+      shell: bash
+      working-directory: terraform
+      run: |
+        terraform init -backend-config="key=vpc/${{ inputs.environment }}.tfstate" -backend-config="bucket=lho-gh-runners-${{ inputs.environment }}-terraform-state" -input=false
+
+    - name: Terraform Refresh
+      shell: bash
+      working-directory: terraform
+      run: |
+        terraform refresh -var="env=${{ inputs.environment }}"
+
+    - name: Get VPC Configuration
+      id: vpc-config
+      shell: bash
+      working-directory: terraform
+      run: |
+        echo "Fetching VPC configuration from Terraform..."
+        PACKER_CONFIG=$(terraform output -json packer_config)
+
+        echo "region=$(echo $PACKER_CONFIG | jq -r '.region')" >> $GITHUB_OUTPUT
+        echo "subnet_id=$(echo $PACKER_CONFIG | jq -r '.subnet_id')" >> $GITHUB_OUTPUT
+        echo "security_group_id=$(echo $PACKER_CONFIG | jq -r '.security_group_id')" >> $GITHUB_OUTPUT
+        echo "associate_public_ip=$(echo $PACKER_CONFIG | jq -r '.associate_public_ip_address')" >> $GITHUB_OUTPUT
+
+    - name: Display Configuration
+      shell: bash
+      run: |
+        echo "::notice::Building AMI with the following configuration:"
+        echo "::notice::Region: ${{ steps.vpc-config.outputs.region }}"
+        echo "::notice::Subnet: ${{ steps.vpc-config.outputs.subnet_id }}"
+        echo "::notice::Security Group: ${{ steps.vpc-config.outputs.security_group_id }}"
+        echo "::notice::Associate Public IP: ${{ steps.vpc-config.outputs.associate_public_ip }}"
+
+    - name: Initialize Packer
+      shell: bash
+      working-directory: terraform/images
+      run: packer init github_agent.linux.pkr.hcl
+
+    - name: Validate Packer Configuration
+      shell: bash
+      working-directory: terraform/images
+      run: |
+        packer validate \
+          -var "region=${{ steps.vpc-config.outputs.region }}" \
+          -var "subnet_id=${{ steps.vpc-config.outputs.subnet_id }}" \
+          -var "security_group_id=${{ steps.vpc-config.outputs.security_group_id }}" \
+          -var "associate_public_ip_address=${{ steps.vpc-config.outputs.associate_public_ip }}" \
+          ${{ inputs.runner-version && format('-var "runner_version={0}"', inputs.runner-version) || '' }} \
+          github_agent.linux.pkr.hcl
+
+    - name: Build AMI
+      shell: bash
+      working-directory: terraform/images
+      run: |
+        packer build \
+          -var "region=${{ steps.vpc-config.outputs.region }}" \
+          -var "subnet_id=${{ steps.vpc-config.outputs.subnet_id }}" \
+          -var "security_group_id=${{ steps.vpc-config.outputs.security_group_id }}" \
+          -var "associate_public_ip_address=${{ steps.vpc-config.outputs.associate_public_ip }}" \
+          ${{ inputs.runner-version && format('-var "runner_version={0}"', inputs.runner-version) || '' }} \
+          github_agent.linux.pkr.hcl
+
+    - name: Display AMI Details
+      shell: bash
+      working-directory: terraform/images
+      if: success()
+      run: |
+        if [ -f "manifest.json" ]; then
+          echo "::notice::AMI built successfully!"
+          AMI_ID=$(cat manifest.json | jq -r '.builds[0].artifact_id')
+          echo "::notice::AMI ID: $AMI_ID"
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload Manifest
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: packer-manifest-${{ inputs.environment }}
+        path: terraform/images/manifest.json
+        retention-days: 30
