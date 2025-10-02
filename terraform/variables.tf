@@ -14,7 +14,7 @@ variable "aws_region" {
   default     = "eu-west-2"
   validation {
     condition     = contains(["eu-west-2"], var.aws_region)
-    error_message = "aws_region must be IRE"
+    error_message = "aws_region must be London"
   }
 }
 

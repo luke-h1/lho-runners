@@ -49,9 +49,9 @@ resource "aws_kms_alias" "github" {
 }
 
 module "runners" {
-  source                          = "git::https://github.com/github-aws-runners/terraform-aws-github-runner?ref=v6.7.9"
-  prefix                          = "lho-${var.env}-github-runners"
-  aws_region                      = var.aws_region
+  source     = "git::https://github.com/github-aws-runners/terraform-aws-github-runner?ref=v6.7.9"
+  prefix     = "lho-${var.env}-github-runners"
+  aws_region = var.aws_region
 
   github_app = {
     id             = var.github_app_id
