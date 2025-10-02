@@ -76,6 +76,11 @@ module "runners" {
   runners_scale_up_lambda_timeout   = 60
   runners_scale_down_lambda_timeout = 60
 
+  eventbridge = {
+    enable        = true
+    accept_events = []
+  }
+
   enable_ssm_on_runners = true
 
   instance_types = ["t3.small"]
@@ -102,7 +107,7 @@ module "runners" {
   }
 
   pool_config = [{
-    size                         = 2
+    size                         = 
     schedule_expression          = "cron(* * * * ? *)" # every minute
     schedule_expression_timezone = "Europe/London"
   }]
