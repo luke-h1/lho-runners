@@ -105,13 +105,6 @@ module "runners" {
     kms_master_key_id                 = aws_kms_key.github.arn
     sqs_managed_sse_enabled           = null
   }
-
-  pool_config = [{
-    size                         = 
-    schedule_expression          = "cron(* * * * ? *)" # every minute
-    schedule_expression_timezone = "Europe/London"
-  }]
-
   idle_config = [{
     cron      = "* * 9-19 * * 1-5" # 9AM to 7PM keep 2 runners idle to pick up jobs
     timeZone  = "Europe/London"
